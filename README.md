@@ -57,24 +57,24 @@ Example:
 
     mkdir -p ~/companion-module-dev
     cd ~/companion-module-dev
-    git clone https://github.com/YOUR_USERNAME/companion-surface-loupedeck-split-strips.git companion-surface-loupedeck
+    git clone https://github.com/ninoleto/companion-surface-loupedeck-split-strips.git companion-surface-loupedeck
     cd companion-surface-loupedeck
     yarn
     yarn build
 
 The important part is that Companion must load the parent folder:
 
-    /home/nino/companion-module-dev
+    ~/companion-module-dev
 
 Not the module folder itself:
 
-    /home/nino/companion-module-dev/companion-surface-loupedeck
+    ~/companion-module-dev/companion-surface-loupedeck
 
 ## Headless Linux / systemd example
 
 Add this to the Companion backend command:
 
-    --extra-module-path=/home/nino/companion-module-dev
+    --extra-module-path=/home/YOUR_USER/companion-module-dev
 
 Then restart Companion:
 
