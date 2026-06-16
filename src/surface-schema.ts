@@ -15,6 +15,13 @@ export function createSurfaceSchema(device: LoupedeckDevice): SurfaceSchemaLayou
 				colors: 'hex',
 			},
 			empty: {},
+			strip: {
+				bitmap: {
+					w: 60,
+					h: 90,
+					format: 'rgb',
+				},
+			},
 		},
 		controls: {},
 	}
@@ -46,11 +53,21 @@ export function createSurfaceSchema(device: LoupedeckDevice): SurfaceSchemaLayou
 				}
 				break
 			case 'lcd-segment':
-				// Fetch rgb for the touch interaction
-				surfaceLayout.controls[control.id] = {
-					row,
-					column,
-					stylePreset: 'button',
+				if (control.id === 'left' || control.id === 'right') {
+					for (let i = 0; i < 3; i++) {
+						surfaceLayout.controls[`strip-${control.id}-${i}`] = {
+							row: i,
+							column,
+							stylePreset: 'strip',
+						}
+					}
+				} else {
+					// Fallback for unexpected lcd segment ids
+					surfaceLayout.controls[control.id] = {
+						row,
+						column,
+						stylePreset: 'button',
+					}
 				}
 				break
 			default:

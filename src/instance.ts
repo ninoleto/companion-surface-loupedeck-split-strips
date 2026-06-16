@@ -15,6 +15,15 @@ interface DisplayFaderValue {
 	value: number
 }
 
+interface StripSegmentControl {
+	display: LoupedeckDisplayId
+	index: number
+}
+
+const STRIP_WIDTH = 60
+const STRIP_HEIGHT = 270
+const STRIP_SEGMENT_HEIGHT = STRIP_HEIGHT / 3
+
 export class LoupedeckWrapper implements SurfaceInstance {
 	readonly #logger: ModuleLogger
 	readonly #deck: LoupedeckDevice
@@ -33,6 +42,34 @@ export class LoupedeckWrapper implements SurfaceInstance {
 	}
 	public get productName(): string {
 		return this.#deck.modelName
+	}
+
+	#parseStripSegmentControlId(controlId: string): StripSegmentControl | undefined {
+		const match = /^strip-(left|right)-([0-2])$/.exec(controlId)
+		if (!match) return undefined
+
+		return {
+			display: match[1] === 'left' ? LoupedeckDisplayId.Left : LoupedeckDisplayId.Right,
+			index: Number(match[2]),
+		}
+	}
+
+	#getStripSegmentControlIdFromTouch(touch: any): string | undefined {
+		if (!this.#useTouchStrips) return undefined
+
+		const side =
+			touch.target.screen === LoupedeckDisplayId.Left
+				? 'left'
+				: touch.target.screen === LoupedeckDisplayId.Right
+					? 'right'
+					: undefined
+
+		if (!side) return undefined
+
+		const y = Math.max(0, Math.min(STRIP_HEIGHT - 1, touch.y ?? 0))
+		const index = Math.max(0, Math.min(2, Math.floor((y / STRIP_HEIGHT) * 3)))
+
+		return `strip-${side}-${index}`
 	}
 
 	public constructor(surfaceId: string, deck: LoupedeckDevice, context: SurfaceContext, useTouchStrips: boolean) {
@@ -60,7 +97,10 @@ export class LoupedeckWrapper implements SurfaceInstance {
 		})
 		this.#deck.on('touchstart', (data) => {
 			for (const touch of data.changedTouches) {
-				if (touch.target.control !== undefined && touch.target.screen === LoupedeckDisplayId.Center) {
+				const stripControlId = this.#getStripSegmentControlIdFromTouch(touch)
+				if (stripControlId) {
+					context.keyDownById(stripControlId)
+				} else if (touch.target.control !== undefined && touch.target.screen === LoupedeckDisplayId.Center) {
 					context.keyDownById(touch.target.control.id)
 				} else if (touch.target.screen == LoupedeckDisplayId.Wheel) {
 					const wheelControl = this.#deck.controls.find((c) => c.type === 'wheel')
@@ -70,7 +110,10 @@ export class LoupedeckWrapper implements SurfaceInstance {
 		})
 		this.#deck.on('touchend', (data) => {
 			for (const touch of data.changedTouches) {
-				if (touch.target.control !== undefined && touch.target.screen === LoupedeckDisplayId.Center) {
+				const stripControlId = this.#getStripSegmentControlIdFromTouch(touch)
+				if (stripControlId) {
+					context.keyUpById(stripControlId)
+				} else if (touch.target.control !== undefined && touch.target.screen === LoupedeckDisplayId.Center) {
 					context.keyUpById(touch.target.control.id)
 				} else if (touch.target.screen == LoupedeckDisplayId.Wheel) {
 					const wheelControl = this.#deck.controls.find((c) => c.type === 'wheel')
@@ -79,42 +122,8 @@ export class LoupedeckWrapper implements SurfaceInstance {
 			}
 		})
 
-		if (this.#useTouchStrips) {
-			/**
-			 * Map the right touch strip to X-Keys T-Bar variable and left to X-Keys Shuttle variable
-			 * this isn't the final thing but at least makes use of the strip while waiting for a better solution
-			 * no multitouch support, the last moved touch wins
-			 * lock will not be obeyed
-			 */
-			this.#deck.on('touchmove', (data) => {
-				const touch = data.changedTouches.find(
-					(touch) => touch.target.screen == LoupedeckDisplayId.Right || touch.target.screen == LoupedeckDisplayId.Left,
-				)
-				if (touch && touch.target.screen == LoupedeckDisplayId.Right) {
-					const val = Math.min(touch.y + 7, 256) // map the touch screen height of 270 to 256 by capping top and bottom 7 pixels
-
-					context.sendVariableValue('rightFaderValueVariable', this.#invertFaderValues ? 256 - val : val)
-					this.#displayFaderValues[LoupedeckDisplayId.Right].value = val
-
-					this.#drawFaderValue(LoupedeckDisplayId.Right, this.#displayFaderValues[LoupedeckDisplayId.Right]).catch(
-						(e) => {
-							this.#logger.error('Drawing right fader value ' + touch.y + ' to loupedeck failed: ' + e)
-						},
-					)
-				} else if (touch && touch.target.screen == LoupedeckDisplayId.Left) {
-					const val = Math.min(touch.y + 7, 256) // map the touch screen height of 270 to 256 by capping top and bottom 7 pixels
-
-					context.sendVariableValue('leftFaderValueVariable', this.#invertFaderValues ? 256 - val : val)
-					this.#displayFaderValues[LoupedeckDisplayId.Left].value = val
-
-					this.#drawFaderValue(LoupedeckDisplayId.Left, this.#displayFaderValues[LoupedeckDisplayId.Left]).catch(
-						(e) => {
-							this.#logger.error('Drawing left fader value ' + touch.y + ' to loupedeck failed: ' + e)
-						},
-					)
-				}
-			})
-		}
+		// Side touch strips are handled as six split bitmap controls:
+		// strip-left-0..2 and strip-right-0..2.
 	}
 
 	async init(): Promise<void> {
@@ -128,13 +137,7 @@ export class LoupedeckWrapper implements SurfaceInstance {
 	}
 
 	async updateConfig(config: Record<string, any>): Promise<void> {
-		if (this.#invertFaderValues != !!config.invertFaderValues) {
-			this.#invertFaderValues = !!config.invertFaderValues
-
-			// TODO - queue these
-			await this.#drawFaderValue(LoupedeckDisplayId.Left, this.#displayFaderValues[LoupedeckDisplayId.Left])
-			await this.#drawFaderValue(LoupedeckDisplayId.Right, this.#displayFaderValues[LoupedeckDisplayId.Right])
-		}
+		this.#invertFaderValues = !!config.invertFaderValues
 	}
 
 	updateCapabilities(_capabilities: HostCapabilities): void {
@@ -150,6 +153,32 @@ export class LoupedeckWrapper implements SurfaceInstance {
 		await this.#deck.blankDevice(true, true)
 	}
 	async draw(_signal: AbortSignal, drawProps: SurfaceDrawProps): Promise<void> {
+		const stripSegment = this.#parseStripSegmentControlId(drawProps.controlId)
+		if (stripSegment) {
+			if (drawProps.image) {
+				await this.#deck.drawBuffer(
+					stripSegment.display,
+					drawProps.image,
+					LoupedeckBufferFormat.RGB,
+					STRIP_WIDTH,
+					STRIP_SEGMENT_HEIGHT,
+					0,
+					stripSegment.index * STRIP_SEGMENT_HEIGHT,
+				)
+			} else {
+				const color = parseColor(drawProps.color)
+				await this.#deck.drawSolidColour(
+					stripSegment.display,
+					{ red: color.r, green: color.g, blue: color.b },
+					STRIP_WIDTH,
+					STRIP_SEGMENT_HEIGHT,
+					0,
+					stripSegment.index * STRIP_SEGMENT_HEIGHT,
+				)
+			}
+			return
+		}
+
 		const control = this.#deck.controls.find((c) => c.id === drawProps.controlId)
 		if (!control) return
 
