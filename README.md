@@ -105,3 +105,51 @@ Custom split-strip version prepared by Nino Milin with help from ChatGPT.
 ## License
 
 MIT, same as the original module.
+
+## Windows install from release package
+
+This method is for users who download the ready-made `.tgz` package from the GitHub release page.
+
+Tested package:
+
+    companion-surface-loupedeck-split-strips-1.0.2-nino.tgz
+
+Steps:
+
+1. Download the `.tgz` file from the GitHub release page.
+2. Extract it with 7-Zip.
+3. Inside the archive there should be a `pkg` folder.
+4. Rename the extracted `pkg` folder to:
+
+   companion-surface-loupedeck
+
+5. Create a developer modules folder, for example:
+
+   C:\CompanionDev
+
+6. Move the renamed module folder into it, so the final path is:
+
+   C:\CompanionDev\companion-surface-loupedeck
+
+7. Open the Companion launcher.
+8. Open the launcher settings / advanced settings.
+9. Enable developer modules.
+10. Set the developer module path to the parent folder:
+
+    C:\CompanionDev
+
+Important: do not select this folder:
+
+       C:\CompanionDev\companion-surface-loupedeck
+
+Companion must point to the parent folder that contains the module folder.
+
+11. Restart Companion.
+12. Check the Companion logs or Surfaces page and confirm that the Loupedeck/Razer dev surface module is loaded.
+
+Notes:
+
+- This was tested on Linux with a Razer Stream Controller.
+- Windows users should treat this as experimental and report if something behaves differently.
+- This does not modify the device firmware.
+- This is not an official Bitfocus Companion module.
