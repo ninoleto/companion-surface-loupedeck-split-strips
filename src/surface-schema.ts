@@ -18,7 +18,7 @@ export function createSurfaceSchema(device: LoupedeckDevice): SurfaceSchemaLayou
 			strip: {
 				bitmap: {
 					w: 60,
-					h: 90,
+					h: 60,
 					format: 'rgb',
 				},
 			},

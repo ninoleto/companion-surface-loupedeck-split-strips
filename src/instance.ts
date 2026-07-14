@@ -24,6 +24,11 @@ const STRIP_WIDTH = 60
 const STRIP_HEIGHT = 270
 const STRIP_SEGMENT_HEIGHT = STRIP_HEIGHT / 3
 
+const STRIP_RENDER_HEIGHT = 60
+const STRIP_RENDER_Y_OFFSET = (STRIP_SEGMENT_HEIGHT - STRIP_RENDER_HEIGHT) / 2
+
+const STRIP_TOUCH_DEAD_ZONE = 5
+
 export class LoupedeckWrapper implements SurfaceInstance {
 	readonly #logger: ModuleLogger
 	readonly #deck: LoupedeckDevice
@@ -31,6 +36,7 @@ export class LoupedeckWrapper implements SurfaceInstance {
 	// readonly #context: SurfaceContext
 	readonly #useTouchStrips: boolean
 
+	readonly #activeStripTouches = new Map<LoupedeckDisplayId, string>()
 	#invertFaderValues = false
 	#displayFaderValues = {
 		[LoupedeckDisplayId.Left]: { color: { red: 0, green: 0, blue: 0 }, value: 0 } satisfies DisplayFaderValue,
@@ -67,7 +73,17 @@ export class LoupedeckWrapper implements SurfaceInstance {
 		if (!side) return undefined
 
 		const y = Math.max(0, Math.min(STRIP_HEIGHT - 1, touch.y ?? 0))
-		const index = Math.max(0, Math.min(2, Math.floor((y / STRIP_HEIGHT) * 3)))
+
+		const index = Math.max(0, Math.min(2, Math.floor(y / STRIP_SEGMENT_HEIGHT)))
+
+		const positionInsideSegment = y - index * STRIP_SEGMENT_HEIGHT
+
+		if (
+			(index > 0 && positionInsideSegment < STRIP_TOUCH_DEAD_ZONE) ||
+			(index < 2 && positionInsideSegment > STRIP_SEGMENT_HEIGHT - STRIP_TOUCH_DEAD_ZONE)
+		) {
+			return undefined
+		}
 
 		return `strip-${side}-${index}`
 	}
@@ -98,7 +114,9 @@ export class LoupedeckWrapper implements SurfaceInstance {
 		this.#deck.on('touchstart', (data) => {
 			for (const touch of data.changedTouches) {
 				const stripControlId = this.#getStripSegmentControlIdFromTouch(touch)
+
 				if (stripControlId) {
+					this.#activeStripTouches.set(touch.target.screen, stripControlId)
 					context.keyDownById(stripControlId)
 				} else if (touch.target.control !== undefined && touch.target.screen === LoupedeckDisplayId.Center) {
 					context.keyDownById(touch.target.control.id)
@@ -110,8 +128,10 @@ export class LoupedeckWrapper implements SurfaceInstance {
 		})
 		this.#deck.on('touchend', (data) => {
 			for (const touch of data.changedTouches) {
-				const stripControlId = this.#getStripSegmentControlIdFromTouch(touch)
+				const stripControlId = this.#activeStripTouches.get(touch.target.screen)
+
 				if (stripControlId) {
+					this.#activeStripTouches.delete(touch.target.screen)
 					context.keyUpById(stripControlId)
 				} else if (touch.target.control !== undefined && touch.target.screen === LoupedeckDisplayId.Center) {
 					context.keyUpById(touch.target.control.id)
@@ -155,27 +175,35 @@ export class LoupedeckWrapper implements SurfaceInstance {
 	async draw(_signal: AbortSignal, drawProps: SurfaceDrawProps): Promise<void> {
 		const stripSegment = this.#parseStripSegmentControlId(drawProps.controlId)
 		if (stripSegment) {
+			const segmentY = stripSegment.index * STRIP_SEGMENT_HEIGHT
+
+			const color = parseColor(drawProps.color)
+
+			await this.#deck.drawSolidColour(
+				stripSegment.display,
+				{
+					red: color.r,
+					green: color.g,
+					blue: color.b,
+				},
+				STRIP_WIDTH,
+				STRIP_SEGMENT_HEIGHT,
+				0,
+				segmentY,
+			)
+
 			if (drawProps.image) {
 				await this.#deck.drawBuffer(
 					stripSegment.display,
 					drawProps.image,
 					LoupedeckBufferFormat.RGB,
 					STRIP_WIDTH,
-					STRIP_SEGMENT_HEIGHT,
+					STRIP_RENDER_HEIGHT,
 					0,
-					stripSegment.index * STRIP_SEGMENT_HEIGHT,
-				)
-			} else {
-				const color = parseColor(drawProps.color)
-				await this.#deck.drawSolidColour(
-					stripSegment.display,
-					{ red: color.r, green: color.g, blue: color.b },
-					STRIP_WIDTH,
-					STRIP_SEGMENT_HEIGHT,
-					0,
-					stripSegment.index * STRIP_SEGMENT_HEIGHT,
+					segmentY + STRIP_RENDER_Y_OFFSET,
 				)
 			}
+
 			return
 		}
 
