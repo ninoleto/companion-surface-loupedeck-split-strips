@@ -36,11 +36,13 @@ export class LoupedeckWrapper implements SurfaceInstance {
 
 	/** Configured strip mode. Only meaningful when #supportsSplitButtons is true */
 	#configStripMode: 'buttons' | 'slider' = 'buttons'
+	#separatedStripButtons = false
 	/** Tracks the currently pressed strip cell control id per active touch id, to release the correct cell */
 	#pressedStripCells = new Map<number, string>()
 	/** Last image drawn for each strip cell (keyed by cell control id), so buttons can be repainted on mode switch */
 	#stripCellImages = new Map<string, Uint8Array>()
 
+	#stripCellColors = new Map<string, { red: number; green: number; blue: number }>()
 	/** Coalescing queue for fader draws, keyed by strip display, so fast dragging can't fall behind */
 	readonly #faderDrawQueue = new ImageWriteQueue<StripDisplayId, DisplayFaderValue>(
 		async (display, values) => this.#drawFaderValue(display, values),
@@ -176,19 +178,27 @@ export class LoupedeckWrapper implements SurfaceInstance {
 
 	async updateConfig(config: Record<string, any>): Promise<void> {
 		const prevEffectiveMode = this.#effectiveStripMode
+		const prevSeparated = this.#separatedStripButtons
 
 		this.#invertFaderValues = !!config.invertFaderValues
 		this.#configStripMode = config.lcdStripMode === 'slider' ? 'slider' : 'buttons'
 
+		this.#separatedStripButtons = !!config.separatedStripButtons
+
 		const nextEffectiveMode = this.#effectiveStripMode
 
 		if (nextEffectiveMode === 'slider') {
-			// Covers both an invert change and switching into slider mode - redraw the fader graphics
 			this.#faderDrawQueue.queue(LoupedeckDisplayId.Left, this.#displayFaderValues[LoupedeckDisplayId.Left])
+
 			this.#faderDrawQueue.queue(LoupedeckDisplayId.Right, this.#displayFaderValues[LoupedeckDisplayId.Right])
-		} else if (prevEffectiveMode === 'slider' && nextEffectiveMode === 'buttons') {
-			// Clear the fader graphics and repaint the button cells from their cached images
-			await this.#blankStrips()
+		} else if (
+			nextEffectiveMode === 'buttons' &&
+			(prevEffectiveMode === 'slider' || prevSeparated !== this.#separatedStripButtons)
+		) {
+			if (prevEffectiveMode === 'slider') {
+				await this.#blankStrips()
+			}
+
 			this.#redrawStripButtons()
 		}
 	}
@@ -308,7 +318,24 @@ export class LoupedeckWrapper implements SurfaceInstance {
 		const strip = this.#stripDisplay(stripId)
 		if (!strip) return null
 
-		const cellIndex = Math.max(0, Math.min(strip.rowSpan - 1, Math.floor((y / strip.height) * strip.rowSpan)))
+		const cellHeight = strip.height / strip.rowSpan
+
+		const clampedY = Math.max(0, Math.min(strip.height - 1, y))
+
+		const cellIndex = Math.max(0, Math.min(strip.rowSpan - 1, Math.floor(clampedY / cellHeight)))
+
+		if (this.#separatedStripButtons) {
+			const activeHeight = Math.min(strip.width, cellHeight)
+
+			const margin = Math.floor((cellHeight - activeHeight) / 2)
+
+			const positionInsideCell = clampedY - cellIndex * cellHeight
+
+			if (positionInsideCell < margin || positionInsideCell >= margin + activeHeight) {
+				return null
+			}
+		}
+
 		return getStripCellControlId(stripId, cellIndex)
 	}
 
@@ -317,25 +344,107 @@ export class LoupedeckWrapper implements SurfaceInstance {
 		const strip = this.#stripDisplay(stripId)
 		if (!strip) return
 
-		// Cache the image regardless of mode, so the buttons can be repainted when switching into buttons mode
-		if (drawProps.image) this.#stripCellImages.set(getStripCellControlId(stripId, cellIndex), drawProps.image)
+		const controlId = getStripCellControlId(stripId, cellIndex)
+
+		if (drawProps.image) {
+			const parsedColor = parseColor(drawProps.color)
+
+			this.#stripCellImages.set(controlId, drawProps.image)
+
+			this.#stripCellColors.set(controlId, {
+				red: parsedColor.r,
+				green: parsedColor.g,
+				blue: parsedColor.b,
+			})
+		}
 
 		if (this.#effectiveStripMode === 'buttons') {
-			if (!drawProps.image) return
-			this.#stripDrawQueue.queue(getStripCellControlId(stripId, cellIndex), {
+			const sourceImage = this.#stripCellImages.get(controlId)
+
+			const color = this.#stripCellColors.get(controlId)
+
+			if (!sourceImage || !color) return
+
+			const stripImage = this.#composeStripCellImage(stripId, sourceImage, color)
+
+			if (!stripImage) return
+
+			this.#stripDrawQueue.queue(controlId, {
 				stripId,
 				cellIndex,
-				image: drawProps.image,
+				image: stripImage,
 			})
-		} else if (this.#effectiveStripMode === 'slider') {
-			// Slider mode routes the button cells to a black hole, but the top cell's background colour
-			// (requested via the style preset) is used to tint the fader fill.
-			if (cellIndex === 0) {
-				const color = parseColor(drawProps.color)
-				this.#displayFaderValues[strip.display].color = { red: color.r, green: color.g, blue: color.b }
-				this.#faderDrawQueue.queue(strip.display, this.#displayFaderValues[strip.display])
+		} else if (this.#effectiveStripMode === 'slider' && cellIndex === 0) {
+			const color = parseColor(drawProps.color)
+
+			this.#displayFaderValues[strip.display].color = {
+				red: color.r,
+				green: color.g,
+				blue: color.b,
+			}
+
+			this.#faderDrawQueue.queue(strip.display, this.#displayFaderValues[strip.display])
+		}
+	}
+
+	#composeStripCellImage(
+		stripId: StripId,
+		sourceImage: Uint8Array,
+		color: {
+			red: number
+			green: number
+			blue: number
+		},
+	): Uint8Array | null {
+		const strip = this.#stripDisplay(stripId)
+		if (!strip) return null
+
+		const cellHeight = Math.floor(strip.height / strip.rowSpan)
+
+		const rowBytes = strip.width * 3
+
+		const sourceHeight = Math.floor(sourceImage.length / rowBytes)
+
+		const renderHeight = Math.min(sourceHeight, strip.width, cellHeight)
+
+		const topOffset = Math.floor((cellHeight - renderHeight) / 2)
+
+		const outputImage = new Uint8Array(strip.width * cellHeight * 3)
+
+		if (!this.#separatedStripButtons) {
+			if (renderHeight > 0) {
+				const firstRow = sourceImage.subarray(0, rowBytes)
+
+				const lastRowStart = (renderHeight - 1) * rowBytes
+
+				const lastRow = sourceImage.subarray(lastRowStart, lastRowStart + rowBytes)
+
+				for (let row = 0; row < topOffset; row++) {
+					outputImage.set(firstRow, row * rowBytes)
+				}
+
+				for (let row = topOffset + renderHeight; row < cellHeight; row++) {
+					outputImage.set(lastRow, row * rowBytes)
+				}
+			} else {
+				for (let offset = 0; offset < outputImage.length; offset += 3) {
+					outputImage[offset] = color.red
+
+					outputImage[offset + 1] = color.green
+
+					outputImage[offset + 2] = color.blue
+				}
 			}
 		}
+
+		for (let row = 0; row < renderHeight; row++) {
+			const sourceStart = row * rowBytes
+			const destinationStart = (topOffset + row) * rowBytes
+
+			outputImage.set(sourceImage.subarray(sourceStart, sourceStart + rowBytes), destinationStart)
+		}
+
+		return outputImage
 	}
 
 	/** Draw a cached/provided image to a strip cell region as a button */
@@ -351,14 +460,30 @@ export class LoupedeckWrapper implements SurfaceInstance {
 			})
 	}
 
-	/** Repaint the strip button cells from the cached images (used when switching into buttons mode) */
+	/** Repaint the strip button cells from the cached images */
 	#redrawStripButtons(): void {
 		for (const stripId of ['left', 'right'] as const) {
 			const strip = this.#stripDisplay(stripId)
 			if (!strip) continue
-			for (let i = 0; i < strip.rowSpan; i++) {
-				const image = this.#stripCellImages.get(getStripCellControlId(stripId, i))
-				if (image) this.#stripDrawQueue.queue(getStripCellControlId(stripId, i), { stripId, cellIndex: i, image })
+
+			for (let cellIndex = 0; cellIndex < strip.rowSpan; cellIndex++) {
+				const controlId = getStripCellControlId(stripId, cellIndex)
+
+				const sourceImage = this.#stripCellImages.get(controlId)
+
+				const color = this.#stripCellColors.get(controlId)
+
+				if (!sourceImage || !color) continue
+
+				const stripImage = this.#composeStripCellImage(stripId, sourceImage, color)
+
+				if (!stripImage) continue
+
+				this.#stripDrawQueue.queue(controlId, {
+					stripId,
+					cellIndex,
+					image: stripImage,
+				})
 			}
 		}
 	}

@@ -54,7 +54,7 @@ export function createSurfaceSchema(
 					// Register each strip as a column of non-square (drawable/pressable) button cells.
 					// The runtime fader/slider mode reuses this same layout, routing the cells to a black hole.
 					const cellWidth = device.displayLeftStrip?.width ?? 60
-					const cellHeight = (device.displayLeftStrip?.height ?? 270) / control.rowSpan
+					const cellHeight = cellWidth
 
 					const presetId = `strip_${cellWidth}x${cellHeight}`
 					if (!surfaceLayout.stylePresets[presetId]) {

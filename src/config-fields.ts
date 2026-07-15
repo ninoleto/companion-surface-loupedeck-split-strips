@@ -35,6 +35,15 @@ export function buildTouchStripConfigFields(supportsSplitButtons: boolean): Some
 					{ id: 'slider', label: 'Fader / slider (legacy)' },
 				],
 			},
+			{
+				id: 'separatedStripButtons',
+				type: 'checkbox',
+				default: false,
+				label: 'Separated strip buttons (60 × 60)',
+				tooltip:
+					'Use centered 60 × 60 buttons. The 15-pixel margins above and below are black and do not respond to touch.',
+				isVisibleExpression: `$(options:lcdStripMode) == 'buttons'`,
+			},
 		)
 	} else {
 		fields.push({
