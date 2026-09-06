@@ -68,5 +68,13 @@ export function buildTouchStripConfigFields(supportsSplitButtons: boolean): Some
 		isVisibleExpression: supportsSplitButtons ? `$(options:lcdStripMode) == 'slider'` : undefined,
 	})
 
+	fields.push({
+		id: 'touchHapticFeedback',
+		type: 'checkbox',
+		default: true,
+		label: 'Touch Haptic Feedback',
+		tooltip: 'Vibrate briefly when a valid touchscreen control is pressed.',
+	})
+
 	return fields
 }
