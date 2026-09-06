@@ -8,7 +8,13 @@ import {
 	ModuleLogger,
 	createModuleLogger,
 } from '@companion-surface/base'
-import { LoupedeckBufferFormat, LoupedeckDevice, LoupedeckDisplayId, RGBColor } from '@loupedeck/node'
+import {
+	LoupedeckBufferFormat,
+	LoupedeckDevice,
+	LoupedeckDisplayId,
+	LoupedeckVibratePattern,
+	RGBColor,
+} from '@loupedeck/node'
 
 interface DisplayFaderValue {
 	color: RGBColor
@@ -38,6 +44,7 @@ export class LoupedeckWrapper implements SurfaceInstance {
 
 	readonly #activeStripTouches = new Map<LoupedeckDisplayId, string>()
 	#invertFaderValues = false
+	#touchHapticFeedback = true
 	#displayFaderValues = {
 		[LoupedeckDisplayId.Left]: { color: { red: 0, green: 0, blue: 0 }, value: 0 } satisfies DisplayFaderValue,
 		[LoupedeckDisplayId.Right]: { color: { red: 0, green: 0, blue: 0 }, value: 0 } satisfies DisplayFaderValue,
@@ -88,6 +95,14 @@ export class LoupedeckWrapper implements SurfaceInstance {
 		return `strip-${side}-${index}`
 	}
 
+	#triggerTouchHapticFeedback(): void {
+		if (!this.#touchHapticFeedback) return
+
+		void this.#deck.vibrate(LoupedeckVibratePattern.SHORT).catch((e) => {
+			this.#logger.warn(`Touch haptic feedback failed: ${e}`)
+		})
+	}
+
 	public constructor(surfaceId: string, deck: LoupedeckDevice, context: SurfaceContext, useTouchStrips: boolean) {
 		this.#logger = createModuleLogger(`Instance/${surfaceId}`)
 
@@ -117,12 +132,17 @@ export class LoupedeckWrapper implements SurfaceInstance {
 
 				if (stripControlId) {
 					this.#activeStripTouches.set(touch.target.screen, stripControlId)
+					this.#triggerTouchHapticFeedback()
 					context.keyDownById(stripControlId)
 				} else if (touch.target.control !== undefined && touch.target.screen === LoupedeckDisplayId.Center) {
+					this.#triggerTouchHapticFeedback()
 					context.keyDownById(touch.target.control.id)
 				} else if (touch.target.screen == LoupedeckDisplayId.Wheel) {
 					const wheelControl = this.#deck.controls.find((c) => c.type === 'wheel')
-					if (wheelControl) context.keyDownById(wheelControl.id)
+					if (wheelControl) {
+						this.#triggerTouchHapticFeedback()
+						context.keyDownById(wheelControl.id)
+					}
 				}
 			}
 		})
@@ -158,6 +178,7 @@ export class LoupedeckWrapper implements SurfaceInstance {
 
 	async updateConfig(config: Record<string, any>): Promise<void> {
 		this.#invertFaderValues = !!config.invertFaderValues
+		this.#touchHapticFeedback = config.touchHapticFeedback !== false
 	}
 
 	updateCapabilities(_capabilities: HostCapabilities): void {
