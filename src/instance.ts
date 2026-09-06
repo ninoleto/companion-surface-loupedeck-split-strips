@@ -62,6 +62,7 @@ export class LoupedeckWrapper implements SurfaceInstance {
 
 	#invertFaderValues = false
 	#touchHapticFeedback = true
+	#touchHapticPattern = LoupedeckVibratePattern.SHORT_LOWER
 	#displayFaderValues = {
 		[LoupedeckDisplayId.Left]: { color: { red: 0, green: 0, blue: 0 }, value: 0 } satisfies DisplayFaderValue,
 		[LoupedeckDisplayId.Right]: { color: { red: 0, green: 0, blue: 0 }, value: 0 } satisfies DisplayFaderValue,
@@ -88,7 +89,7 @@ export class LoupedeckWrapper implements SurfaceInstance {
 	#triggerTouchHapticFeedback(): void {
 		if (!this.#touchHapticFeedback) return
 
-		void this.#deck.vibrate(LoupedeckVibratePattern.SHORT).catch((e) => {
+		void this.#deck.vibrate(this.#touchHapticPattern).catch((e) => {
 			this.#logger.warn(`Touch haptic feedback failed: ${e}`)
 		})
 	}
@@ -206,6 +207,18 @@ export class LoupedeckWrapper implements SurfaceInstance {
 
 		this.#invertFaderValues = !!config.invertFaderValues
 		this.#touchHapticFeedback = config.touchHapticFeedback !== false
+
+		switch (config.touchHapticPattern) {
+			case 'short':
+				this.#touchHapticPattern = LoupedeckVibratePattern.SHORT
+				break
+			case 'short_low':
+				this.#touchHapticPattern = LoupedeckVibratePattern.SHORT_LOW
+				break
+			default:
+				this.#touchHapticPattern = LoupedeckVibratePattern.SHORT_LOWER
+				break
+		}
 		this.#configStripMode = config.lcdStripMode === 'slider' ? 'slider' : 'buttons'
 
 		this.#separatedStripButtons = !!config.separatedStripButtons

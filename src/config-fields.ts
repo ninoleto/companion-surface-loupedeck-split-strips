@@ -76,5 +76,17 @@ export function buildTouchStripConfigFields(supportsSplitButtons: boolean): Some
 		tooltip: 'Vibrate briefly when a valid touchscreen control is pressed.',
 	})
 
+	fields.push({
+		id: 'touchHapticPattern',
+		type: 'dropdown',
+		default: 'short_lower',
+		label: 'Haptic strength',
+		choices: [
+			{ id: 'short_lower', label: 'Subtle' },
+			{ id: 'short_low', label: 'Light' },
+			{ id: 'short', label: 'Normal' },
+		],
+	})
+
 	return fields
 }
