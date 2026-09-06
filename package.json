@@ -1,6 +1,6 @@
 {
 	"name": "companion-surface-loupedeck",
-	"version": "1.1.1",
+	"version": "1.2.0",
 	"main": "dist/main.js",
 	"type": "module",
 	"scripts": {
@@ -17,7 +17,7 @@
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/bitfocus/companion-surface-loupedeck.git"
+		"url": "git+https://github.com/ninoleto/companion-surface-loupedeck-split-strips.git"
 	},
 	"engines": {
 		"node": "^22.18",
