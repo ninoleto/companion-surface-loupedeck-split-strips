@@ -8,7 +8,13 @@ import {
 	ModuleLogger,
 	createModuleLogger,
 } from '@companion-surface/base'
-import { LoupedeckBufferFormat, LoupedeckDevice, LoupedeckDisplayId, RGBColor } from '@loupedeck/node'
+import {
+	LoupedeckBufferFormat,
+	LoupedeckDevice,
+	LoupedeckDisplayId,
+	LoupedeckVibratePattern,
+	RGBColor,
+} from '@loupedeck/node'
 import { getStripButtonControlId, parseStripButtonControlId, type StripButtonLayout } from './strip-layout.js'
 import { SideStripXPadding, SideStripYPadding, stripIdFromScreen, type StripId } from './util.js'
 import { ImageWriteQueue } from './write-queue.js'
@@ -55,6 +61,7 @@ export class LoupedeckWrapper implements SurfaceInstance {
 	)
 
 	#invertFaderValues = false
+	#touchHapticFeedback = true
 	#displayFaderValues = {
 		[LoupedeckDisplayId.Left]: { color: { red: 0, green: 0, blue: 0 }, value: 0 } satisfies DisplayFaderValue,
 		[LoupedeckDisplayId.Right]: { color: { red: 0, green: 0, blue: 0 }, value: 0 } satisfies DisplayFaderValue,
@@ -76,6 +83,14 @@ export class LoupedeckWrapper implements SurfaceInstance {
 
 	get #activeStripButtonLayout(): StripButtonLayout {
 		return this.#separatedStripButtons ? 'separated' : 'native'
+	}
+
+	#triggerTouchHapticFeedback(): void {
+		if (!this.#touchHapticFeedback) return
+
+		void this.#deck.vibrate(LoupedeckVibratePattern.SHORT).catch((e) => {
+			this.#logger.warn(`Touch haptic feedback failed: ${e}`)
+		})
 	}
 
 	public constructor(
@@ -110,15 +125,20 @@ export class LoupedeckWrapper implements SurfaceInstance {
 		this.#deck.on('touchstart', (data) => {
 			for (const touch of data.changedTouches) {
 				if (touch.target.control !== undefined && touch.target.screen === LoupedeckDisplayId.Center) {
+					this.#triggerTouchHapticFeedback()
 					context.keyDownById(touch.target.control.id)
 				} else if (touch.target.screen == LoupedeckDisplayId.Wheel) {
 					const wheelControl = this.#deck.controls.find((c) => c.type === 'wheel')
-					if (wheelControl) context.keyDownById(wheelControl.id)
+					if (wheelControl) {
+						this.#triggerTouchHapticFeedback()
+						context.keyDownById(wheelControl.id)
+					}
 				} else if (this.#effectiveStripMode === 'buttons') {
 					const stripId = stripIdFromScreen(touch.target.screen)
 					const controlId = stripId && this.#stripCellControlIdForTouch(stripId, touch.y)
 					if (controlId) {
 						this.#pressedStripCells.set(touch.id, controlId)
+						this.#triggerTouchHapticFeedback()
 						context.keyDownById(controlId)
 					}
 				}
@@ -185,6 +205,7 @@ export class LoupedeckWrapper implements SurfaceInstance {
 		const prevSeparated = this.#separatedStripButtons
 
 		this.#invertFaderValues = !!config.invertFaderValues
+		this.#touchHapticFeedback = config.touchHapticFeedback !== false
 		this.#configStripMode = config.lcdStripMode === 'slider' ? 'slider' : 'buttons'
 
 		this.#separatedStripButtons = !!config.separatedStripButtons
