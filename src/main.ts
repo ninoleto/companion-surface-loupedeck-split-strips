@@ -58,6 +58,13 @@ const StreamDeckPlugin: SurfacePlugin<LoupedeckDeviceInfo> = {
 								label: 'Invert Fader Values',
 								tooltip: 'If set, the fader values will be inverted, with the value being between 256 and 0.',
 							},
+							{
+								id: 'touchHapticFeedback',
+								type: 'checkbox',
+								default: true,
+								label: 'Touch Haptic Feedback',
+								tooltip: 'Vibrate briefly when a valid touchscreen control is pressed.',
+							},
 						]
 					: null,
 				transferVariables: useTouchStrips
